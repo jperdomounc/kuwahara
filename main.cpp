@@ -3,17 +3,23 @@
 #include <vector>
 #include <numeric>
 #include <cmath>
-#define NUM_COLUMNS 1200
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-void kuwahara(int i, int j, int k, unsigned char* data, std::vector<unsigned char>& output);
+void kuwahara(int i, int j, int k, unsigned char* data, std::vector<unsigned char>& output,const int& x, const int& y, const int& radius);
 
-int main()
+int main(int argc, char* argv[])
 {
+   if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <radius>" << std::endl;
+        return 1;
+    }
+
+    int radius = std::stoi(argv[1]);
+
     int x, y, n;
 
     
@@ -27,25 +33,27 @@ int main()
     std::vector<unsigned char> output; 
     // passing pointer to vector data works for image write
     // image is 1200 x 1200 pixels
-    
-    for (int i = 0; i < y; i++) {
-        for (int j = 0; j < x; j++) {
-            for (int k = 0; k < 4; k++) { // k is offset into color channels r,g,b,a
-                kuwahara(i, j, k, data, output);
+
+    std::vector<unsigned char> current(data, data + x*y*n);
+    stbi_image_free(data);
+    for (int z = 0; z < 10; z++) {
+        for (int i = 0; i < y; i++) {
+            for (int j = 0; j < x; j++) {
+                for (int k = 0; k < 4; k++) { // k is offset into color channels r,g,b,a
+                    kuwahara(i, j, k, current.data(), output,x, y, radius);
+                }
             }
         }
-    }
+        current = output;
+    } 
     
     if (stbi_write_png("new_cat.png", x, y, n, output.data(), x*n) == 0) {
         std::cerr << "error saving image";
     }
     
-        
-    stbi_image_free(data);
-    
 }
 
-void kuwahara(int i, int j, int k, unsigned char* data, std::vector<unsigned char>& output) {
+void kuwahara(int i, int j, int k, unsigned char* data, std::vector<unsigned char>& output, const int& x, const int& y, const int& radius) {
     // draw quadrants
     // calculate standard deviation for each quadrant
     // write to output buffer
@@ -55,33 +63,33 @@ void kuwahara(int i, int j, int k, unsigned char* data, std::vector<unsigned cha
     std::vector<int> quadrant3;
     std::vector<int> quadrant4;
     if (k == 3) {
-        output.push_back(data[((i*NUM_COLUMNS + j)*4) + k]); // ignore alpha channel
+        output.push_back(data[((i*y + j)*4) + k]); // ignore alpha channel
         return;
     } else {
-        for (int a = 0; a < 3; a++) { // quadrant 1 ;a is x b is y
-            for (int b = 0; b < 3; b++) {
-                int pixel = ((std::clamp((i + a), 0, 1199) * NUM_COLUMNS + std::clamp((j + b), 0, 1199)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
+        for (int a = 0; a < radius; a++) { // quadrant 1 ;a is x b is y
+            for (int b = 0; b < radius; b++) {
+                int pixel = ((std::clamp((i + a), 0, x-1) * y + std::clamp((j + b), 0, y-1)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
                 quadrant1.push_back(pixel); // pixel is actually just the index of the specific color channel
             }
         }
 
-        for (int c = 0; c < 3; c++) { // quadrant 2
-            for (int d = 0; d < 3; d++) {
-                int pixel = ((std::clamp((i - c), 0, 1199) * NUM_COLUMNS + std::clamp((j + d), 0, 1199)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
+        for (int c = 0; c < radius; c++) { // quadrant 2
+            for (int d = 0; d < radius; d++) {
+                int pixel = ((std::clamp((i - c), 0, x-1) * y + std::clamp((j + d), 0, y-1)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
                 quadrant2.push_back(pixel);
             }
         }
 
-        for (int e = 0; e < 3; e++) { // quadrant 3
-            for (int f = 0; f < 3; f++) {
-                int pixel = ((std::clamp((i - e), 0, 1199) * NUM_COLUMNS + std::clamp((j - f), 0, 1199)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
+        for (int e = 0; e < radius; e++) { // quadrant 3
+            for (int f = 0; f < radius; f++) {
+                int pixel = ((std::clamp((i - e), 0, x-1) * y + std::clamp((j - f), 0, y-1)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
                 quadrant3.push_back(pixel);
             }
         }
 
-        for (int g = 0; g < 3; g++) { // quadrant 4
-            for (int h = 0; h < 3; h++) {
-                int pixel = ((std::clamp((i + g), 0, 1199) * NUM_COLUMNS + std::clamp((j - h), 0, 1199)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
+        for (int g = 0; g < radius; g++) { // quadrant 4
+            for (int h = 0; h < radius; h++) {
+                int pixel = ((std::clamp((i + g), 0, x-1) * y + std::clamp((j - h), 0, y-1)) * 4) + k; // grabs pixel at i + a, j + b and offsets into color channel with k
                 quadrant4.push_back(pixel);
             }
         }
@@ -124,7 +132,7 @@ void kuwahara(int i, int j, int k, unsigned char* data, std::vector<unsigned cha
         double stdev4 = std::sqrt(sq_sum4 / q4_values.size() - mean4 * mean4);
         quadrant_avg_and_deviance.push_back(std::make_pair(mean4, stdev4));
 
-        // i don't know... line 127
+        // i don't know... line below this comment is WILD
         auto lowest_stdev = std::min_element(quadrant_avg_and_deviance.begin(), quadrant_avg_and_deviance.end(), [](const auto& a, const auto& b){return a.second < b.second;});
         output.push_back(static_cast<unsigned char>(lowest_stdev->first));
     }
@@ -151,6 +159,6 @@ void kuwahara(int i, int j, int k, unsigned char* data, std::vector<unsigned cha
         std::cout << elem << " ";
     }
     std::cout << std::endl;
-    std::cout << "NUM_COLUMNS: " << NUM_COLUMNS << " i: " << i << " j: " << j << std::endl;
+    std::cout << "y: " << y << " i: " << i << " j: " << j << std::endl;
     */
 } // kuwahara function end
